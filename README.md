@@ -52,6 +52,7 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 | `--frontmatter`   | Add YAML frontmatter with extracted metadata                   |
 | `-t`, `--template`| Path to a template file for customizing output                 |
 | `--filename-template` | Batch mode filename pattern (e.g. `{{date}}-{{title}}.md`) |
+| `--download-images` | Download remote images to a local folder (relative to the output file, e.g. `../assets`) |
 | `-v`, `--version` | Show version                                                   |
 
 
@@ -73,6 +74,10 @@ python3 scripts/url2md.py https://example.com/article -t article.tpl -o article.
 # Batch with smart filenames
 python3 scripts/url2md.py -f urls.txt -d ./output/ --filename-template "{{date}}-{{title}}.md"
 python3 scripts/url2md.py -f urls.txt -d ./output/ --filename-template "{{index}}-{{title}}.md"
+
+# Download images locally (relative to the output Markdown file)
+python3 scripts/url2md.py https://example.com/article -o article.md --download-images assets
+python3 scripts/url2md.py -f urls.txt -d ./output/ --download-images assets
 ```
 
 ### Template example

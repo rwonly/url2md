@@ -20,6 +20,8 @@ import os
 import argparse
 import html
 import json
+import hashlib
+import mimetypes
 from typing import Optional
 import urllib.request
 import urllib.error
@@ -1034,7 +1036,90 @@ def fetch_url(url, timeout=30, user_agent=None):
         raise Exception(f"Failed to fetch {url}: {str(e)}") from e
 
 
-def url_to_markdown(url, title=True, timeout=30, full_page=False, frontmatter=False, template=None, raw_html=None):
+def _download_image(img_url: str, dest_dir: str, base_url: str = "") -> Optional[str]:
+    """Download an image and return its local filename, or None on failure."""
+    try:
+        full_url = urljoin(base_url, img_url)
+        parsed = urlparse(full_url)
+        basename = os.path.basename(parsed.path)
+        if not basename or "." not in basename:
+            basename = ""
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Referer": base_url,
+        }
+        req = urllib.request.Request(full_url, headers=headers)
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            content_type = response.headers.get("Content-Type", "")
+
+            if not basename:
+                ext = mimetypes.guess_extension(content_type.split(";")[0].strip()) or ".bin"
+                basename = hashlib.md5(full_url.encode()).hexdigest() + ext
+
+            # Sanitize basename
+            basename = re.sub(r'[^a-zA-Z0-9._-]', '-', basename)
+            if basename.startswith("-"):
+                basename = basename[1:]
+
+            dest_path = os.path.join(dest_dir, basename)
+            counter = 1
+            stem, ext = os.path.splitext(basename)
+            while os.path.exists(dest_path):
+                dest_path = os.path.join(dest_dir, f"{stem}-{counter}{ext}")
+                counter += 1
+
+            with open(dest_path, "wb") as f:
+                f.write(response.read())
+
+        return os.path.basename(dest_path)
+    except Exception:
+        return None
+
+
+def _localize_images(md: str, base_url: str, image_dir: str, output_path: Optional[str] = None) -> str:
+    """Replace remote image URLs in Markdown with local relative paths.
+
+    image_dir is the relative path written into Markdown (e.g. "assets").
+    The actual download directory is resolved against output_path if given.
+    """
+    if output_path:
+        base_dir = os.path.dirname(os.path.abspath(output_path))
+        dest_dir = os.path.join(base_dir, image_dir)
+    else:
+        dest_dir = os.path.abspath(image_dir)
+
+    os.makedirs(dest_dir, exist_ok=True)
+    seen: dict[str, str] = {}
+
+    def _replace(match):
+        alt = match.group(1)
+        url = match.group(2)
+
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return match.group(0)
+
+        if url in seen:
+            local_name = seen[url]
+        else:
+            local_name = _download_image(url, dest_dir, base_url)
+            seen[url] = local_name or url
+
+        if local_name is None:
+            return match.group(0)
+
+        rel_path = image_dir.replace("\\", "/") + "/" + local_name
+        return f"![{alt}]({rel_path})"
+
+    return re.sub(r"!\[(.*?)\]\((.*?)\)", _replace, md)
+
+
+def url_to_markdown(url, title=True, timeout=30, full_page=False, frontmatter=False, template=None, raw_html=None, image_dir=None, output_path=None):
     """Convert a URL to Markdown."""
     if raw_html is None:
         raw_html = fetch_url(url, timeout=timeout)
@@ -1060,6 +1145,9 @@ def url_to_markdown(url, title=True, timeout=30, full_page=False, frontmatter=Fa
             md_stripped = md.lstrip()
             if not md_stripped.startswith(f"# {page_title}"):
                 md = f"# {page_title}\n\n{md}"
+
+    if image_dir:
+        md = _localize_images(md, url, image_dir, output_path)
 
     return md
 
@@ -1092,7 +1180,7 @@ def _render_filename(template: str, metadata: dict[str, str], index: int) -> str
     return result
 
 
-def batch_convert(urls_file, output_dir=None, full_page=False, title=True, frontmatter=False, template=None, filename_template=None):
+def batch_convert(urls_file, output_dir=None, full_page=False, title=True, frontmatter=False, template=None, filename_template=None, image_dir=None):
     """Convert multiple URLs from a file."""
     results = []
     errors = []
@@ -1105,7 +1193,6 @@ def batch_convert(urls_file, output_dir=None, full_page=False, title=True, front
         try:
             raw_html = fetch_url(url)
             metadata = extract_metadata(raw_html, url)
-            md = url_to_markdown(url, title=title, full_page=full_page, frontmatter=frontmatter, template=template, raw_html=raw_html)
             if output_dir:
                 if filename_template:
                     filename = _render_filename(filename_template, metadata, i)
@@ -1118,10 +1205,12 @@ def batch_convert(urls_file, output_dir=None, full_page=False, title=True, front
                         filename = f"url-{i}"
                     filename += ".md"
                 filepath = os.path.join(output_dir, filename)
+                md = url_to_markdown(url, title=title, full_page=full_page, frontmatter=frontmatter, template=template, raw_html=raw_html, image_dir=image_dir, output_path=filepath)
                 with open(filepath, "w", encoding="utf-8") as f:
                     f.write(md)
                 results.append((url, filepath))
             else:
+                md = url_to_markdown(url, title=title, full_page=full_page, frontmatter=frontmatter, template=template, raw_html=raw_html, image_dir=image_dir)
                 results.append((url, md))
         except Exception as e:
             errors.append((url, str(e)))
@@ -1167,6 +1256,10 @@ Examples:
         "--filename-template",
         help="Batch mode filename pattern using variables: {{title}}, {{date}}, {{datetime}}, {{author}}, {{published}}, {{site_name}}, {{url}}, {{index}}. Default: URL-based slug",
     )
+    parser.add_argument(
+        "--download-images",
+        help="Download remote images to a local folder and rewrite Markdown references (e.g. 'assets')",
+    )
 
     args = parser.parse_args()
 
@@ -1192,6 +1285,7 @@ Examples:
             frontmatter=args.frontmatter,
             template=template_content,
             filename_template=args.filename_template,
+            image_dir=args.download_images,
         )
         if errors:
             print(
@@ -1207,6 +1301,7 @@ Examples:
         sys.exit(1)
 
     try:
+        output_path = args.output if args.output else None
         md = url_to_markdown(
             args.url,
             title=not args.no_title,
@@ -1214,8 +1309,11 @@ Examples:
             full_page=args.full_page,
             frontmatter=args.frontmatter,
             template=template_content,
+            image_dir=args.download_images,
+            output_path=output_path,
         )
         if args.output:
+            os.makedirs(os.path.dirname(os.path.abspath(args.output)) or ".", exist_ok=True)
             with open(args.output, "w", encoding="utf-8") as f:
                 f.write(md)
             print(f"Saved to: {args.output}")
