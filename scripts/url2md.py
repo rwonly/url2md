@@ -1032,9 +1032,10 @@ def fetch_url(url, timeout=30, user_agent=None):
         raise Exception(f"Failed to fetch {url}: {str(e)}") from e
 
 
-def url_to_markdown(url, title=True, timeout=30, full_page=False, frontmatter=False, template=None):
+def url_to_markdown(url, title=True, timeout=30, full_page=False, frontmatter=False, template=None, raw_html=None):
     """Convert a URL to Markdown."""
-    raw_html = fetch_url(url, timeout=timeout)
+    if raw_html is None:
+        raw_html = fetch_url(url, timeout=timeout)
     metadata = extract_metadata(raw_html, url)
     page_title = metadata.get("title", "") if title else ""
 
@@ -1061,7 +1062,35 @@ def url_to_markdown(url, title=True, timeout=30, full_page=False, frontmatter=Fa
     return md
 
 
-def batch_convert(urls_file, output_dir=None, full_page=False, title=True, frontmatter=False, template=None):
+def _render_filename(template: str, metadata: dict[str, str], index: int) -> str:
+    """Generate a filename from a template string and metadata."""
+    now = datetime.now()
+    author = metadata.get("author", "") or metadata.get("site_name", "")
+    published = _format_date(metadata.get("published", ""))
+    safe_title = re.sub(r'[\\/*?:"<>|]', "-", metadata.get("title", "")).strip("-")
+    variables = {
+        "{{title}}": safe_title,
+        "{{date}}": now.strftime("%Y-%m-%d"),
+        "{{datetime}}": now.strftime("%Y-%m-%d-%H%M%S"),
+        "{{author}}": author,
+        "{{published}}": published,
+        "{{site_name}}": metadata.get("site_name", ""),
+        "{{url}}": metadata.get("source", ""),
+        "{{source}}": metadata.get("source", ""),
+        "{{index}}": str(index),
+    }
+    result = template
+    for var, value in variables.items():
+        result = result.replace(var, value)
+    # Final sanitize
+    result = re.sub(r'[\\/*?:"<>|]', "-", result)
+    result = re.sub(r"-+", "-", result).strip("-.")
+    if not result:
+        result = f"url-{index}"
+    return result
+
+
+def batch_convert(urls_file, output_dir=None, full_page=False, title=True, frontmatter=False, template=None, filename_template=None):
     """Convert multiple URLs from a file."""
     results = []
     errors = []
@@ -1072,13 +1101,21 @@ def batch_convert(urls_file, output_dir=None, full_page=False, title=True, front
     for i, url in enumerate(urls, 1):
         print(f"[{i}/{len(urls)}] Converting: {url}", file=sys.stderr)
         try:
-            md = url_to_markdown(url, title=title, full_page=full_page, frontmatter=frontmatter, template=template)
+            raw_html = fetch_url(url)
+            metadata = extract_metadata(raw_html, url)
+            md = url_to_markdown(url, title=title, full_page=full_page, frontmatter=frontmatter, template=template, raw_html=raw_html)
             if output_dir:
-                parsed = urlparse(url)
-                filename = re.sub(r"[^a-zA-Z0-9]+", "-", parsed.netloc + parsed.path).strip("-")
-                if not filename:
-                    filename = f"url-{i}"
-                filepath = os.path.join(output_dir, f"{filename}.md")
+                if filename_template:
+                    filename = _render_filename(filename_template, metadata, i)
+                    if not filename.lower().endswith(".md"):
+                        filename += ".md"
+                else:
+                    parsed = urlparse(url)
+                    filename = re.sub(r"[^a-zA-Z0-9]+", "-", parsed.netloc + parsed.path).strip("-")
+                    if not filename:
+                        filename = f"url-{i}"
+                    filename += ".md"
+                filepath = os.path.join(output_dir, filename)
                 with open(filepath, "w", encoding="utf-8") as f:
                     f.write(md)
                 results.append((url, filepath))
@@ -1124,6 +1161,10 @@ Examples:
         "--template",
         help="Path to a template file for customizing output (variables: {{title}}, {{content}}, {{url}}, {{author}}, {{published}}, {{description}}, {{site_name}}, {{date}}, {{datetime}})",
     )
+    parser.add_argument(
+        "--filename-template",
+        help="Batch mode filename pattern using variables: {{title}}, {{date}}, {{datetime}}, {{author}}, {{published}}, {{site_name}}, {{url}}, {{index}}. Default: URL-based slug",
+    )
 
     args = parser.parse_args()
 
@@ -1148,6 +1189,7 @@ Examples:
             title=not args.no_title,
             frontmatter=args.frontmatter,
             template=template_content,
+            filename_template=args.filename_template,
         )
         if errors:
             print(

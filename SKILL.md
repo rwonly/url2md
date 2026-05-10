@@ -66,6 +66,7 @@ url2md.py [url] [options]
 | `--timeout` | Request timeout in seconds (default: 30) |
 | `--frontmatter` | Add YAML frontmatter with extracted metadata |
 | `-t, --template` | Path to a template file for customizing output |
+| `--filename-template` | Batch mode filename pattern (e.g. `{{date}}-{{title}}.md`) |
 | `-v, --version` | Show version |
 
 **Examples:**
@@ -90,6 +91,9 @@ python3 scripts/url2md.py https://example.com/article --frontmatter -o article.m
 
 # Custom template
 python3 scripts/url2md.py https://example.com/article -t article.tpl -o article.md
+
+# Batch with smart filenames
+python3 scripts/url2md.py -f urls.txt -d ./output/ --filename-template "{{date}}-{{title}}.md"
 ```
 
 **Template variables:** `{{title}}`, `{{content}}`, `{{url}}`, `{{source}}`, `{{author}}`, `{{published}}`, `{{description}}`, `{{category}}`, `{{site_name}}`, `{{date}}`, `{{datetime}}`
