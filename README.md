@@ -1,8 +1,6 @@
 # url2md
 
-Convert web pages to clean, readable **Markdown** using a small Python script. Handy for documentation, archiving articles, batch exports, or any workflow where you want HTML turned into `.md` without pulling in third-party packages.
-
-This repository also includes a **skill** (`[SKILL.md](SKILL.md)`) so agents can discover when to use url2md—for example when a single fetch is not enough and a script-based or bulk conversion fits better.
+**url2md** is an agent **Skill** which converts web pages to clean, readable **Markdown** using a small Python script. Handy for documentation, archiving articles, batch exports, or any workflow where you want HTML turned into `.md` without pulling in third-party packages. **Git repository:** [url2md](++https://github.com/rwonly/url2md++). Contributions are welcome—open an issue or pull request for bug reports, ideas, or improvements. 
 
 ## Requirements
 

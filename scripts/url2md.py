@@ -2,6 +2,9 @@
 """
 url2md - Convert web pages to Markdown.
 
+Author:
+- rwonly@gmail.com
+
 Supports:
 - Single URL to Markdown conversion
 - Batch conversion from a file containing URLs
@@ -642,7 +645,7 @@ Examples:
         help="Use full <body> instead of article/main extraction (more noise, wider coverage)",
     )
     parser.add_argument("--timeout", type=int, default=30, help="Request timeout in seconds")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.1.3")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.2.0")
 
     args = parser.parse_args()
 
