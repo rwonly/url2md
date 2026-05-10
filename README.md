@@ -31,7 +31,7 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 - **No dependencies** beyond the Python standard library
 - **Reader-style scope** — removes script/style/noscript/template, then prefers `<article>` or `<main>` (otherwise the full `<body>`) so Markdown resembles “main article” extraction
 - **Title extraction** — prefers Open Graph / Twitter card title when present, else `<title>`; optional leading `#` heading
-- **YAML Frontmatter** — extracts structured metadata (author, published date, description, site name, source URL) for knowledge-base workflows
+- **YAML Frontmatter** — extracts structured metadata (title, author, published, description, category, source URL) from `<meta>` tags and Schema.org JSON-LD for knowledge-base workflows
 - **Template system** — customize output format with variables like `{{title}}`, `{{content}}`, `{{author}}`, `{{published}}`, `{{date}}`, etc.
 - **Link resolution** — relative URLs are turned into absolute ones
 - **Basic formatting** — headings, paragraphs, lists, links, images, fenced code with optional language, GFM-style tables, bold/italic
@@ -93,7 +93,7 @@ clipped: {{date}}
 Original: [{{source}}]({{url}})
 ```
 
-Available variables: `{{title}}`, `{{content}}`, `{{url}}`, `{{source}}`, `{{author}}`, `{{published}}`, `{{description}}`, `{{site_name}}`, `{{date}}`, `{{datetime}}`.
+Available variables: `{{title}}`, `{{content}}`, `{{url}}`, `{{source}}`, `{{author}}`, `{{published}}`, `{{description}}`, `{{category}}`, `{{site_name}}`, `{{date}}`, `{{datetime}}`.
 
 ## When to use it
 

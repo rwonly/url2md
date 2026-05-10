@@ -293,15 +293,17 @@ def extract_metadata(raw_html: str, url: str) -> dict[str, str]:
     # Schema.org JSON-LD
     _extract_schema_org(raw_html, metadata)
 
-    # tags
-    metadata["tags"] = ", ".join(_extract_tags(raw_html, metadata.get("title", "")))
+    # tags: heading extraction only if Schema.org did not provide keywords
+    if not metadata.get("tags"):
+        metadata["tags"] = ", ".join(_extract_tags(raw_html, metadata.get("title", "")))
 
     return metadata
 
 
 def _extract_schema_org(raw_html: str, metadata: dict[str, str]) -> None:
-    """Try to fill missing metadata from Schema.org JSON-LD."""
+    """Extract metadata from Schema.org JSON-LD scripts."""
     try:
+        candidates: list[dict] = []
         for m in re.finditer(
             r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
             raw_html,
@@ -310,35 +312,119 @@ def _extract_schema_org(raw_html: str, metadata: dict[str, str]) -> None:
             data = json.loads(m.group(1).strip())
             if not isinstance(data, dict):
                 continue
+            if "@graph" in data and isinstance(data["@graph"], list):
+                for item in data["@graph"]:
+                    if isinstance(item, dict):
+                        candidates.append(item)
+            else:
+                candidates.append(data)
 
-            def _pick(val):
-                if isinstance(val, str) and val:
-                    return val
-                if isinstance(val, dict):
-                    return val.get("name", "")
-                if isinstance(val, list) and val:
-                    first = val[0]
-                    if isinstance(first, dict):
-                        return first.get("name", "")
-                    if isinstance(first, str):
-                        return first
-                return ""
+        if not candidates:
+            return
 
-            if not metadata.get("title"):
-                metadata["title"] = _pick(data.get("headline", ""))
-            if not metadata.get("description"):
-                metadata["description"] = _pick(data.get("description", ""))
-            if not metadata.get("author"):
-                metadata["author"] = _pick(data.get("author", ""))
-            if not metadata.get("published"):
-                metadata["published"] = _pick(data.get("datePublished", ""))
-            if not metadata.get("site_name"):
-                metadata["site_name"] = _pick(data.get("publisher", ""))
+        # Prefer Article / NewsArticle / BlogPosting over generic WebPage
+        def _type_priority(item: dict) -> int:
+            t = item.get("@type", "")
+            if isinstance(t, list):
+                t = " ".join(str(x) for x in t)
+            t = str(t).lower()
+            if "newsarticle" in t:
+                return 0
+            if "blogposting" in t:
+                return 1
+            if "article" in t:
+                return 2
+            if "techarticle" in t:
+                return 3
+            if "webpage" in t:
+                return 4
+            return 5
 
+        candidates.sort(key=_type_priority)
+
+        for item in candidates:
+            _apply_schema_org_item(item, metadata)
             if all(metadata.get(k) for k in ("title", "author", "published", "description")):
                 break
     except Exception:
         pass
+
+
+def _schema_text(val) -> str:
+    """Extract a plain string from a Schema.org value."""
+    if isinstance(val, str) and val:
+        return val
+    if isinstance(val, dict):
+        return val.get("name", "") or val.get("@id", "")
+    if isinstance(val, list) and val:
+        first = val[0]
+        if isinstance(first, dict):
+            return first.get("name", "")
+        if isinstance(first, str):
+            return first
+    return ""
+
+
+def _schema_author(val) -> str:
+    """Extract author name(s) from Schema.org Person / Organization."""
+    if isinstance(val, str) and val:
+        return val
+    if isinstance(val, dict):
+        return val.get("name", "")
+    if isinstance(val, list) and val:
+        names = []
+        for a in val:
+            if isinstance(a, dict):
+                n = a.get("name", "")
+                if n:
+                    names.append(n)
+            elif isinstance(a, str) and a:
+                names.append(a)
+        return ", ".join(names)
+    return ""
+
+
+def _schema_publisher(val) -> str:
+    """Extract publisher name from Schema.org Organization."""
+    if isinstance(val, str) and val:
+        return val
+    if isinstance(val, dict):
+        return val.get("name", "") or val.get("alternateName", "")
+    return ""
+
+
+def _apply_schema_org_item(item: dict, metadata: dict[str, str]) -> None:
+    """Apply a single Schema.org object to the metadata dict."""
+    if not metadata.get("title"):
+        metadata["title"] = _schema_text(item.get("headline")) or _schema_text(item.get("name"))
+
+    if not metadata.get("description"):
+        metadata["description"] = _schema_text(item.get("description"))
+
+    if not metadata.get("author"):
+        metadata["author"] = _schema_author(item.get("author"))
+
+    if not metadata.get("published"):
+        metadata["published"] = _schema_text(item.get("datePublished"))
+    if not metadata.get("published"):
+        metadata["published"] = _schema_text(item.get("dateCreated"))
+
+    if not metadata.get("site_name"):
+        metadata["site_name"] = _schema_publisher(item.get("publisher"))
+
+    if not metadata.get("tags"):
+        kw = item.get("keywords")
+        if isinstance(kw, str) and kw:
+            metadata["tags"] = kw
+        elif isinstance(kw, list):
+            metadata["tags"] = ", ".join(str(k) for k in kw if k)
+
+    if not metadata.get("category"):
+        section = item.get("articleSection")
+        if isinstance(section, str) and section:
+            metadata["category"] = section
+        elif isinstance(section, list):
+            metadata["category"] = ", ".join(str(s) for s in section if s)
 
 
 # Common English stopwords
@@ -554,6 +640,7 @@ def format_frontmatter(metadata: dict[str, str]) -> str:
         ("published", published),
         ("created", created),
         ("description", metadata.get("description", "")),
+        ("category", metadata.get("category", "")),
         ("source", metadata.get("source", "")),
     ]
 

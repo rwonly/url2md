@@ -39,7 +39,7 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 - **No dependencies**: Uses only Python standard library (`urllib`, `html.parser`)
 - **Reader-style scope**: Strips `script`/`style`/`noscript`/`template`, then prefers the first `<article>` or `<main>` (else `<body>`) so output focuses on primary content
 - **Title extraction**: Uses `og:title` / Twitter title when present, otherwise `<title>`, added as H1 when enabled
-- **YAML Frontmatter**: Extracts structured metadata (title, author, published, description, site_name, source) for knowledge-base workflows
+- **YAML Frontmatter**: Extracts structured metadata (title, author, published, description, category, source) from `<meta>` tags and Schema.org JSON-LD for knowledge-base workflows
 - **Template system**: Customize output format with variables (`{{title}}`, `{{content}}`, `{{author}}`, `{{published}}`, `{{date}}`, etc.)
 - **Link resolution**: Converts relative URLs to absolute
 - **Basic formatting**: Headings, paragraphs, lists, links, images, fenced code (with optional language), GFM-style tables, bold/italic
@@ -92,7 +92,7 @@ python3 scripts/url2md.py https://example.com/article --frontmatter -o article.m
 python3 scripts/url2md.py https://example.com/article -t article.tpl -o article.md
 ```
 
-**Template variables:** `{{title}}`, `{{content}}`, `{{url}}`, `{{source}}`, `{{author}}`, `{{published}}`, `{{description}}`, `{{site_name}}`, `{{date}}`, `{{datetime}}`
+**Template variables:** `{{title}}`, `{{content}}`, `{{url}}`, `{{source}}`, `{{author}}`, `{{published}}`, `{{description}}`, `{{category}}`, `{{site_name}}`, `{{date}}`, `{{datetime}}`
 
 ## When to Use
 
