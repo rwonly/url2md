@@ -116,8 +116,11 @@ def _collapse_blank_lines_between_pipe_tables(md: str) -> str:
             i += 1
             continue
         if _is_md_pipe_table_row(line):
-            while out and out[-1] == "":
-                out.pop()
+            # Only collapse blank lines between consecutive table rows,
+            # not before the first table row (GFM needs a blank line above)
+            if out and _is_md_pipe_table_row(out[-1]):
+                while out and out[-1] == "":
+                    out.pop()
             out.append(line)
             i += 1
             while i < n:
