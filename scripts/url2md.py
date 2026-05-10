@@ -17,12 +17,14 @@ import sys
 import os
 import argparse
 import html
+import json
 from typing import Optional
 import urllib.request
 import urllib.error
 from urllib.parse import urljoin, urlparse
 from html.parser import HTMLParser
 from html.entities import name2codepoint
+from datetime import datetime
 import re
 
 
@@ -210,27 +212,395 @@ def prepare_html_document(html: str, full_page: bool = False) -> str:
     return _extract_body(html) or html
 
 
-def extract_page_title(raw_html: str) -> str:
-    """Prefer Open Graph title, then Twitter card, then <title>."""
-    patterns = [
+def _unescape_meta(val: str) -> str:
+    """Clean a meta tag value."""
+    t = html.unescape(val.strip())
+    t = re.sub(r"\s+", " ", t)
+    return t
+
+
+def _extract_meta(raw_html: str, patterns: list[str]) -> str:
+    """Try multiple regex patterns to extract a meta value."""
+    for pat in patterns:
+        m = re.search(pat, raw_html, re.IGNORECASE | re.DOTALL)
+        if m:
+            val = _unescape_meta(m.group(1))
+            if val:
+                return val
+    return ""
+
+
+def extract_metadata(raw_html: str, url: str) -> dict[str, str]:
+    """Extract structured metadata from raw HTML."""
+    metadata: dict[str, str] = {
+        "title": "",
+        "author": "",
+        "published": "",
+        "description": "",
+        "source": url,
+        "site_name": "",
+    }
+
+    # title
+    title_patterns = [
         r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']*)["\']',
         r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+property=["\']og:title["\']',
         r'<meta[^>]+name=["\']twitter:title["\'][^>]+content=["\']([^"\']*)["\']',
         r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']twitter:title["\']',
     ]
-    for pat in patterns:
-        m = re.search(pat, raw_html, re.IGNORECASE | re.DOTALL)
+    metadata["title"] = _extract_meta(raw_html, title_patterns)
+    if not metadata["title"]:
+        m = re.search(r"<title[^>]*>(.*?)</title>", raw_html, re.DOTALL | re.IGNORECASE)
         if m:
-            t = html.unescape(m.group(1).strip())
-            t = re.sub(r"\s+", " ", t)
+            t = _unescape_meta(m.group(1))
             if t:
-                return t
-    m = re.search(r"<title[^>]*>(.*?)</title>", raw_html, re.DOTALL | re.IGNORECASE)
+                metadata["title"] = t
+
+    # description
+    desc_patterns = [
+        r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']*)["\']',
+        r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+property=["\']og:description["\']',
+        r'<meta[^>]+name=["\']twitter:description["\'][^>]+content=["\']([^"\']*)["\']',
+        r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']twitter:description["\']',
+        r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']*)["\']',
+        r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']description["\']',
+    ]
+    metadata["description"] = _extract_meta(raw_html, desc_patterns)
+
+    # author
+    author_patterns = [
+        r'<meta[^>]+name=["\']author["\'][^>]+content=["\']([^"\']*)["\']',
+        r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']author["\']',
+    ]
+    metadata["author"] = _extract_meta(raw_html, author_patterns)
+
+    # published
+    pub_patterns = [
+        r'<meta[^>]+property=["\']article:published_time["\'][^>]+content=["\']([^"\']*)["\']',
+        r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+property=["\']article:published_time["\']',
+        r'<meta[^>]+name=["\']publishedDate["\'][^>]+content=["\']([^"\']*)["\']',
+        r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']publishedDate["\']',
+    ]
+    metadata["published"] = _extract_meta(raw_html, pub_patterns)
+
+    # site_name
+    site_patterns = [
+        r'<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\']([^"\']*)["\']',
+        r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+property=["\']og:site_name["\']',
+    ]
+    metadata["site_name"] = _extract_meta(raw_html, site_patterns)
+
+    # Schema.org JSON-LD
+    _extract_schema_org(raw_html, metadata)
+
+    # tags
+    metadata["tags"] = ", ".join(_extract_tags(raw_html, metadata.get("title", "")))
+
+    return metadata
+
+
+def _extract_schema_org(raw_html: str, metadata: dict[str, str]) -> None:
+    """Try to fill missing metadata from Schema.org JSON-LD."""
+    try:
+        for m in re.finditer(
+            r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+            raw_html,
+            re.IGNORECASE | re.DOTALL,
+        ):
+            data = json.loads(m.group(1).strip())
+            if not isinstance(data, dict):
+                continue
+
+            def _pick(val):
+                if isinstance(val, str) and val:
+                    return val
+                if isinstance(val, dict):
+                    return val.get("name", "")
+                if isinstance(val, list) and val:
+                    first = val[0]
+                    if isinstance(first, dict):
+                        return first.get("name", "")
+                    if isinstance(first, str):
+                        return first
+                return ""
+
+            if not metadata.get("title"):
+                metadata["title"] = _pick(data.get("headline", ""))
+            if not metadata.get("description"):
+                metadata["description"] = _pick(data.get("description", ""))
+            if not metadata.get("author"):
+                metadata["author"] = _pick(data.get("author", ""))
+            if not metadata.get("published"):
+                metadata["published"] = _pick(data.get("datePublished", ""))
+            if not metadata.get("site_name"):
+                metadata["site_name"] = _pick(data.get("publisher", ""))
+
+            if all(metadata.get(k) for k in ("title", "author", "published", "description")):
+                break
+    except Exception:
+        pass
+
+
+# Common English stopwords
+_EN_STOPWORDS = {
+    "the", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or",
+    "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might",
+    "can", "this", "that", "these", "those", "with", "by", "from", "as", "it",
+    "its", "into", "out", "up", "down", "over", "under", "again", "further",
+    "then", "once", "here", "there", "when", "where", "why", "how", "all",
+    "any", "both", "each", "few", "more", "most", "other", "some", "such",
+    "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very",
+    "just", "also", "new", "old", "first", "last", "long", "great", "little",
+    "series", "detailed", "explanation", "guide", "introduction", "overview",
+}
+
+def _extract_headings(raw_html: str) -> list[str]:
+    """Extract inner text from h2/h3 tags."""
+    headings: list[str] = []
+    for level in (2, 3):
+        pattern = rf"<h{level}\b[^>]*>(.*?)</h{level}\s*>"
+        for m in re.finditer(pattern, raw_html, re.IGNORECASE | re.DOTALL):
+            text = re.sub(r"<[^>]+>", "", m.group(1))
+            text = html.unescape(text).strip()
+            if text:
+                headings.append(text)
+    return headings
+
+
+def _extract_tokens(text: str) -> list[str]:
+    """Extract English candidate tag tokens from a piece of text."""
+    if not text:
+        return []
+
+    # Clean: remove parenthetical/bracket content and separators
+    clean = re.sub(r"[（(][^）)]+[）)]", "", text)
+    clean = re.sub(r"[【\[][^】\]]+[】\]]", "", clean)
+    clean = re.sub(r"[:：|·\-\-\—]+", " ", clean)
+
+    tokens: list[str] = []
+    for word in re.findall(r"[a-zA-Z][a-zA-Z0-9]+", clean):
+        if len(word) >= 2 and word.lower() not in _EN_STOPWORDS:
+            tokens.append(word)
+    return tokens
+
+
+def _singular_form(word: str) -> str:
+    """Simple heuristic to map a plural English word to its singular form."""
+    w = word.lower()
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("es") and len(w) > 3:
+        return w[:-2]
+    if w.endswith("s") and len(w) > 2:
+        return w[:-1]
+    return w
+
+
+def _merge_plural_forms(token_sources: dict[str, int], token_display: dict[str, str]) -> dict[str, tuple[str, int]]:
+    """Merge plural/singular variants, keeping the form with the highest source count."""
+    merged: dict[str, tuple[str, int]] = {}  # canonical -> (display, count)
+
+    for key, count in token_sources.items():
+        display = token_display[key]
+        singular = _singular_form(key)
+
+        # Determine canonical form (prefer the one that already exists with higher count)
+        if singular in merged:
+            existing_display, existing_count = merged[singular]
+            if count > existing_count:
+                merged[singular] = (display, count)
+            elif count == existing_count and display[0].isupper() and not existing_display[0].isupper():
+                merged[singular] = (display, count)
+            else:
+                merged[singular] = (existing_display, existing_count + count)
+        elif key in merged:
+            existing_display, existing_count = merged[key]
+            if count > existing_count:
+                merged[key] = (display, count)
+            else:
+                merged[key] = (existing_display, existing_count + count)
+        else:
+            # Check if this key is the singular of an already-stored plural
+            found = False
+            for canonical in list(merged.keys()):
+                if _singular_form(canonical) == key or _singular_form(key) == canonical:
+                    existing_display, existing_count = merged[canonical]
+                    if count > existing_count:
+                        merged[canonical] = (display, count)
+                    else:
+                        merged[canonical] = (existing_display, existing_count + count)
+                    found = True
+                    break
+            if not found:
+                merged[key] = (display, count)
+
+    return merged
+
+
+def _extract_tags(raw_html: str, title: str) -> list[str]:
+    """Extract English tags from meta keywords, title, and h2/h3 headings.
+
+    Tags are merged from two sources:
+    - Meta keywords (if present on the page)
+    - Tokens that appear in >= 2 sources (title + h2/h3 headings)
+
+    Single-source words are kept only if they look like all-caps acronyms
+    from the title (e.g. AI, API, URL).
+    """
+    # 1. Collect tokens per source (title = 1 source, each h2/h3 = 1 source)
+    sources: list[list[str]] = []
+    if title:
+        sources.append(_extract_tokens(title))
+    for heading in _extract_headings(raw_html):
+        sources.append(_extract_tokens(heading))
+
+    # Count how many distinct sources contain each token
+    token_sources: dict[str, int] = {}
+    token_display: dict[str, str] = {}
+
+    for tokens in sources:
+        seen_in_source: set[str] = set()
+        for token in tokens:
+            key = token.lower()
+            if key not in seen_in_source:
+                seen_in_source.add(key)
+                token_sources[key] = token_sources.get(key, 0) + 1
+            # Prefer capitalized display form for English
+            if key not in token_display:
+                token_display[key] = token
+            elif token[0].isupper() and not token_display[key][0].isupper():
+                token_display[key] = token
+
+    # Merge singular/plural forms
+    merged = _merge_plural_forms(token_sources, token_display)
+
+    # Keep tokens that appear in >= 2 sources ("repeatedly occurring")
+    # OR are all-caps acronyms from the title
+    title_keys = {t.lower() for t in sources[0]} if sources else set()
+    heading_tags: list[tuple[str, int]] = []
+
+    for key, (display, count) in merged.items():
+        if count >= 2:
+            heading_tags.append((display, count))
+        elif count == 1 and key in title_keys:
+            if display.isupper() and len(display) >= 2:
+                heading_tags.append((display, count))
+
+    heading_tags.sort(key=lambda x: -x[1])
+
+    # 2. Meta keywords (merge with heading tags, deduplicated)
+    kw_patterns = [
+        r'<meta[^>]+name=["\']keywords["\'][^>]+content=["\']([^"\']*)["\']',
+        r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']keywords["\']',
+    ]
+    keywords = _extract_meta(raw_html, kw_patterns)
+    meta_tags: list[str] = []
+    if keywords:
+        meta_tags = [t.strip() for t in re.split(r"[,;，；]", keywords) if t.strip()]
+
+    seen: set[str] = set()
+    results: list[str] = []
+    for tag in meta_tags + [t for t, _ in heading_tags]:
+        key = tag.lower()
+        if key not in seen:
+            seen.add(key)
+            results.append(tag)
+
+    return results[:10]
+
+
+def _format_date(val: str) -> str:
+    """Extract YYYY-MM-DD from various date string formats."""
+    if not val:
+        return ""
+    # ISO 8601: 2024-03-12T08:00:00Z
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", val)
     if m:
-        t = html.unescape(re.sub(r"\s+", " ", m.group(1).strip()))
-        if t:
-            return t
-    return ""
+        return m.group(0)
+    # Slash format: 2024/03/12
+    m = re.match(r"(\d{4})/(\d{2})/(\d{2})", val)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    # Chinese format: 2024年03月12日
+    m = re.match(r"(\d{4})年(\d{1,2})月(\d{1,2})日", val)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    return val[:10] if len(val) >= 10 else val
+
+
+def format_frontmatter(metadata: dict[str, str]) -> str:
+    """Format metadata as YAML frontmatter."""
+    lines = ["---"]
+
+    # Author fallback: use site_name if author is empty
+    author = metadata.get("author", "")
+    if not author:
+        author = metadata.get("site_name", "")
+
+    # Format published date to YYYY-MM-DD
+    published = _format_date(metadata.get("published", ""))
+
+    # Current date as created
+    created = datetime.now().strftime("%Y-%m-%d")
+
+    # Tags as YAML list
+    tags_str = metadata.get("tags", "")
+    tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
+
+    fields = [
+        ("title", metadata.get("title", "")),
+        ("author", author),
+        ("published", published),
+        ("created", created),
+        ("description", metadata.get("description", "")),
+        ("source", metadata.get("source", "")),
+    ]
+
+    for key, val in fields:
+        if val:
+            if ":" in val or val.startswith((" ", '"', "'")) or "\n" in val:
+                val = json.dumps(val, ensure_ascii=False)
+            lines.append(f"{key}: {val}")
+
+    if tags:
+        lines.append("tags:")
+        for tag in tags:
+            lines.append(f"  - {tag}")
+
+    lines.append("---")
+    return "\n".join(lines)
+
+
+def apply_template(template: str, metadata: dict[str, str], content: str) -> str:
+    """Replace variables in a template string."""
+    now = datetime.now()
+    author = metadata.get("author", "") or metadata.get("site_name", "")
+    published = _format_date(metadata.get("published", ""))
+    tags_str = metadata.get("tags", "")
+    variables = {
+        "{{title}}": metadata.get("title", ""),
+        "{{url}}": metadata.get("source", ""),
+        "{{source}}": metadata.get("source", ""),
+        "{{date}}": now.strftime("%Y-%m-%d"),
+        "{{datetime}}": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "{{created}}": now.strftime("%Y-%m-%d"),
+        "{{content}}": content,
+        "{{author}}": author,
+        "{{description}}": metadata.get("description", ""),
+        "{{published}}": published,
+        "{{site_name}}": metadata.get("site_name", ""),
+        "{{tags}}": tags_str,
+    }
+    result = template
+    for var, value in variables.items():
+        result = result.replace(var, value)
+    return result
+
+
+def extract_page_title(raw_html: str) -> str:
+    """Prefer Open Graph title, then Twitter card, then <title>."""
+    return extract_metadata(raw_html, "").get("title", "")
 
 
 class HTMLToMarkdown(HTMLParser):
@@ -575,25 +945,36 @@ def fetch_url(url, timeout=30, user_agent=None):
         raise Exception(f"Failed to fetch {url}: {str(e)}") from e
 
 
-def url_to_markdown(url, title=True, timeout=30, full_page=False):
+def url_to_markdown(url, title=True, timeout=30, full_page=False, frontmatter=False, template=None):
     """Convert a URL to Markdown."""
     raw_html = fetch_url(url, timeout=timeout)
-    page_title = extract_page_title(raw_html) if title else ""
+    metadata = extract_metadata(raw_html, url)
+    page_title = metadata.get("title", "") if title else ""
 
     fragment = prepare_html_document(raw_html, full_page=full_page)
     converter = HTMLToMarkdown(base_url=url)
     converter.feed(fragment)
     md = converter.get_markdown()
 
-    if page_title:
-        md_stripped = md.lstrip()
-        if not md_stripped.startswith(f"# {page_title}"):
-            md = f"# {page_title}\n\n{md}"
+    if template:
+        md = apply_template(template, metadata, md)
+    elif frontmatter:
+        fm = format_frontmatter(metadata)
+        if page_title:
+            md_stripped = md.lstrip()
+            if not md_stripped.startswith(f"# {page_title}"):
+                md = f"# {page_title}\n\n{md}"
+        md = f"{fm}\n\n{md}"
+    else:
+        if page_title:
+            md_stripped = md.lstrip()
+            if not md_stripped.startswith(f"# {page_title}"):
+                md = f"# {page_title}\n\n{md}"
 
     return md
 
 
-def batch_convert(urls_file, output_dir=None, full_page=False, title=True):
+def batch_convert(urls_file, output_dir=None, full_page=False, title=True, frontmatter=False, template=None):
     """Convert multiple URLs from a file."""
     results = []
     errors = []
@@ -604,7 +985,7 @@ def batch_convert(urls_file, output_dir=None, full_page=False, title=True):
     for i, url in enumerate(urls, 1):
         print(f"[{i}/{len(urls)}] Converting: {url}", file=sys.stderr)
         try:
-            md = url_to_markdown(url, title=title, full_page=full_page)
+            md = url_to_markdown(url, title=title, full_page=full_page, frontmatter=frontmatter, template=template)
             if output_dir:
                 parsed = urlparse(url)
                 filename = re.sub(r"[^a-zA-Z0-9]+", "-", parsed.netloc + parsed.path).strip("-")
@@ -645,9 +1026,27 @@ Examples:
         help="Use full <body> instead of article/main extraction (more noise, wider coverage)",
     )
     parser.add_argument("--timeout", type=int, default=30, help="Request timeout in seconds")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.2.0")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.3.0")
+    parser.add_argument(
+        "--frontmatter",
+        action="store_true",
+        help="Add YAML frontmatter with extracted metadata (title, author, published, etc.)",
+    )
+    parser.add_argument(
+        "-t",
+        "--template",
+        help="Path to a template file for customizing output (variables: {{title}}, {{content}}, {{url}}, {{author}}, {{published}}, {{description}}, {{site_name}}, {{date}}, {{datetime}})",
+    )
 
     args = parser.parse_args()
+
+    template_content = None
+    if args.template:
+        if not os.path.exists(args.template):
+            print(f"Error: Template file not found: {args.template}", file=sys.stderr)
+            sys.exit(1)
+        with open(args.template, "r", encoding="utf-8") as f:
+            template_content = f.read()
 
     if args.file:
         if not os.path.exists(args.file):
@@ -660,6 +1059,8 @@ Examples:
             args.dir,
             full_page=args.full_page,
             title=not args.no_title,
+            frontmatter=args.frontmatter,
+            template=template_content,
         )
         if errors:
             print(
@@ -680,6 +1081,8 @@ Examples:
             title=not args.no_title,
             timeout=args.timeout,
             full_page=args.full_page,
+            frontmatter=args.frontmatter,
+            template=template_content,
         )
         if args.output:
             with open(args.output, "w", encoding="utf-8") as f:

@@ -1,6 +1,6 @@
 # url2md
 
-**url2md** is an agent **Skill** which converts web pages to clean, readable **Markdown** using a small Python script. Handy for documentation, archiving articles, batch exports, or any workflow where you want HTML turned into `.md` without pulling in third-party packages. **Git repository:** [url2md](++https://github.com/rwonly/url2md++). Contributions are welcome—open an issue or pull request for bug reports, ideas, or improvements. 
+**url2md** is an agent **Skill** which converts web pages to clean, readable **Markdown** using a small Python script. Handy for documentation, archiving articles, batch exports, or any workflow where you want HTML turned into `.md` without pulling in third-party packages. **Git repository:** [url2md](https://github.com/rwonly/url2md). Contributions are welcome—open an issue or pull request for bug reports, ideas, or improvements. 
 
 ## Requirements
 
@@ -31,6 +31,8 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 - **No dependencies** beyond the Python standard library
 - **Reader-style scope** — removes script/style/noscript/template, then prefers `<article>` or `<main>` (otherwise the full `<body>`) so Markdown resembles “main article” extraction
 - **Title extraction** — prefers Open Graph / Twitter card title when present, else `<title>`; optional leading `#` heading
+- **YAML Frontmatter** — extracts structured metadata (author, published date, description, site name, source URL) for knowledge-base workflows
+- **Template system** — customize output format with variables like `{{title}}`, `{{content}}`, `{{author}}`, `{{published}}`, `{{date}}`, etc.
 - **Link resolution** — relative URLs are turned into absolute ones
 - **Basic formatting** — headings, paragraphs, lists, links, images, fenced code with optional language, GFM-style tables, bold/italic
 - **Noise removal** — skips nav, aside, footer, forms, and similar chrome within the chosen fragment
@@ -47,6 +49,8 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 | `--no-title`      | Do not add the page title as H1                                |
 | `--full-page`     | Use full `<body>` instead of preferring `<article>` / `<main>` |
 | `--timeout`       | Request timeout in seconds (default: 30)                       |
+| `--frontmatter`   | Add YAML frontmatter with extracted metadata                   |
+| `-t`, `--template`| Path to a template file for customizing output                 |
 | `-v`, `--version` | Show version                                                   |
 
 
@@ -58,13 +62,45 @@ python3 scripts/url2md.py https://docs.python.org/3 -o python-docs.md
 python3 scripts/url2md.py -f urls.txt -d ./output/ --timeout 60
 python3 scripts/url2md.py https://example.com --no-title
 python3 scripts/url2md.py https://example.com/deep-page --full-page -o full.md
+
+# YAML frontmatter output (great for Obsidian / PKM workflows)
+python3 scripts/url2md.py https://example.com/article --frontmatter -o article.md
+
+# Custom template
+python3 scripts/url2md.py https://example.com/article -t article.tpl -o article.md
 ```
+
+### Template example
+
+Create `article.tpl`:
+
+```markdown
+---
+title: "{{title}}"
+author: {{author}}
+published: {{published}}
+source: "{{source}}"
+clipped: {{date}}
+---
+
+# {{title}}
+
+> {{description}}
+
+{{content}}
+
+---
+Original: [{{source}}]({{url}})
+```
+
+Available variables: `{{title}}`, `{{content}}`, `{{url}}`, `{{source}}`, `{{author}}`, `{{published}}`, `{{description}}`, `{{site_name}}`, `{{date}}`, `{{datetime}}`.
 
 ## When to use it
 
 - Turn documentation pages into Markdown for local reference
 - Archive articles as plain text files
 - Batch a list of URLs into separate files
+- Build a knowledge base with structured metadata (frontmatter / templates)
 - Prefer a script when interactive browser or fetch tools are not the right fit
 
 ## Limitations

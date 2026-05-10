@@ -39,6 +39,8 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 - **No dependencies**: Uses only Python standard library (`urllib`, `html.parser`)
 - **Reader-style scope**: Strips `script`/`style`/`noscript`/`template`, then prefers the first `<article>` or `<main>` (else `<body>`) so output focuses on primary content
 - **Title extraction**: Uses `og:title` / Twitter title when present, otherwise `<title>`, added as H1 when enabled
+- **YAML Frontmatter**: Extracts structured metadata (title, author, published, description, site_name, source) for knowledge-base workflows
+- **Template system**: Customize output format with variables (`{{title}}`, `{{content}}`, `{{author}}`, `{{published}}`, `{{date}}`, etc.)
 - **Link resolution**: Converts relative URLs to absolute
 - **Basic formatting**: Headings, paragraphs, lists, links, images, fenced code (with optional language), GFM-style tables, bold/italic
 - **Noise removal**: Skips navigation, sidebars, footers, forms, and other chrome inside the parsed fragment
@@ -62,6 +64,8 @@ url2md.py [url] [options]
 | `--no-title` | Skip adding page title as H1 |
 | `--full-page` | Parse full `<body>` instead of `<article>`/`<main>` first (more chrome, wider coverage) |
 | `--timeout` | Request timeout in seconds (default: 30) |
+| `--frontmatter` | Add YAML frontmatter with extracted metadata |
+| `-t, --template` | Path to a template file for customizing output |
 | `-v, --version` | Show version |
 
 **Examples:**
@@ -80,12 +84,21 @@ python3 scripts/url2md.py https://example.com --no-title
 
 # Whole body (no article/main focus)
 python3 scripts/url2md.py https://example.com/sitemap --full-page -o sitemap.md
+
+# YAML frontmatter (great for Obsidian / PKM)
+python3 scripts/url2md.py https://example.com/article --frontmatter -o article.md
+
+# Custom template
+python3 scripts/url2md.py https://example.com/article -t article.tpl -o article.md
 ```
+
+**Template variables:** `{{title}}`, `{{content}}`, `{{url}}`, `{{source}}`, `{{author}}`, `{{published}}`, `{{description}}`, `{{site_name}}`, `{{date}}`, `{{datetime}}`
 
 ## When to Use
 
 - Converting documentation pages to Markdown for local reference
 - Archiving web articles as text files
+- Building a knowledge base with structured metadata (frontmatter / templates)
 - Building static content from dynamic sources
 - Extracting readable content when browser tools are unavailable
 - Batch processing a list of URLs

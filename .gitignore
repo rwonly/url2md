@@ -33,5 +33,6 @@ htmlcov/
 
 # Editor / IDE
 .idea/
+.kilo/
 *.swp
 *~
