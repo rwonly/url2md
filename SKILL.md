@@ -37,10 +37,11 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 ## Features
 
 - **No dependencies**: Uses only Python standard library (`urllib`, `html.parser`)
-- **Title extraction**: Automatically adds page title as H1
+- **Reader-style scope**: Strips `script`/`style`/`noscript`/`template`, then prefers the first `<article>` or `<main>` (else `<body>`) so output focuses on primary content
+- **Title extraction**: Uses `og:title` / Twitter title when present, otherwise `<title>`, added as H1 when enabled
 - **Link resolution**: Converts relative URLs to absolute
-- **Basic formatting**: Headings, paragraphs, lists, links, images, code blocks, tables
-- **Noise removal**: Strips scripts, styles, navigation, footers, and other boilerplate
+- **Basic formatting**: Headings, paragraphs, lists, links, images, fenced code (with optional language), GFM-style tables, bold/italic
+- **Noise removal**: Skips navigation, sidebars, footers, forms, and other chrome inside the parsed fragment
 
 ## Script Reference
 
@@ -59,6 +60,7 @@ url2md.py [url] [options]
 | `-f, --file` | File containing URLs to convert |
 | `-d, --dir` | Output directory for batch conversion |
 | `--no-title` | Skip adding page title as H1 |
+| `--full-page` | Parse full `<body>` instead of `<article>`/`<main>` first (more chrome, wider coverage) |
 | `--timeout` | Request timeout in seconds (default: 30) |
 | `-v, --version` | Show version |
 
@@ -75,6 +77,9 @@ python3 scripts/url2md.py -f urls.txt -d ./output/ --timeout 60
 
 # Skip title
 python3 scripts/url2md.py https://example.com --no-title
+
+# Whole body (no article/main focus)
+python3 scripts/url2md.py https://example.com/sitemap --full-page -o sitemap.md
 ```
 
 ## When to Use

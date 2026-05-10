@@ -31,10 +31,11 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 ## Features
 
 - **No dependencies** beyond the Python standard library
-- **Title extraction** — page title becomes a leading `#` heading (optional)
+- **Reader-style scope** — removes script/style/noscript/template, then prefers `<article>` or `<main>` (otherwise the full `<body>`) so Markdown resembles “main article” extraction
+- **Title extraction** — prefers Open Graph / Twitter card title when present, else `<title>`; optional leading `#` heading
 - **Link resolution** — relative URLs are turned into absolute ones
-- **Basic formatting** — headings, paragraphs, lists, links, images, code blocks, tables
-- **Noise removal** — strips scripts, styles, navigation, footers, and similar boilerplate
+- **Basic formatting** — headings, paragraphs, lists, links, images, fenced code with optional language, GFM-style tables, bold/italic
+- **Noise removal** — skips nav, aside, footer, forms, and similar chrome within the chosen fragment
 
 ## CLI reference
 
@@ -45,6 +46,7 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 | `-f`, `--file` | File containing URLs (one per line) |
 | `-d`, `--dir` | Output directory for batch mode |
 | `--no-title` | Do not add the page title as H1 |
+| `--full-page` | Use full `<body>` instead of preferring `<article>` / `<main>` |
 | `--timeout` | Request timeout in seconds (default: 30) |
 | `-v`, `--version` | Show version |
 
@@ -55,6 +57,7 @@ python3 scripts/url2md.py https://docs.python.org/3
 python3 scripts/url2md.py https://docs.python.org/3 -o python-docs.md
 python3 scripts/url2md.py -f urls.txt -d ./output/ --timeout 60
 python3 scripts/url2md.py https://example.com --no-title
+python3 scripts/url2md.py https://example.com/deep-page --full-page -o full.md
 ```
 
 ## When to use it
