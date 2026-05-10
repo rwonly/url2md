@@ -135,6 +135,64 @@ def _collapse_blank_lines_between_pipe_tables(md: str) -> str:
     return "\n".join(out)
 
 
+def _collapse_excess_blank_lines(md: str, max_consecutive_blank_lines: int = 1) -> str:
+    """
+    Collapse runs of empty lines (including whitespace-only) outside fenced code
+    blocks so the file does not contain large vertical gaps.
+    """
+    lines = md.splitlines()
+    out: list[str] = []
+    in_fence = False
+    blank_run = 0
+    for line in lines:
+        st = line.strip()
+        if st.startswith("```"):
+            in_fence = not in_fence
+            blank_run = 0
+            out.append(line)
+            continue
+        if in_fence:
+            out.append(line)
+            continue
+        if st == "":
+            blank_run += 1
+            if blank_run <= max_consecutive_blank_lines:
+                out.append("")
+        else:
+            blank_run = 0
+            out.append(line)
+    return "\n".join(out)
+
+
+# Lines that are only a Markdown list marker (no item text), e.g. "-" or "12."
+_EMPTY_MD_LIST_LINE = re.compile(
+    r"^\s*(?:[-*+]|(?:\d{1,9}\.))\s*$",
+)
+
+
+def _strip_empty_markdown_list_lines(md: str) -> str:
+    """
+    Remove lines that are only a list marker (from empty <li> or layout quirks).
+    Skips fenced code blocks.
+    """
+    lines = md.splitlines()
+    out: list[str] = []
+    in_fence = False
+    for line in lines:
+        st = line.strip()
+        if st.startswith("```"):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence:
+            out.append(line)
+            continue
+        if _EMPTY_MD_LIST_LINE.match(line):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def prepare_html_document(html: str, full_page: bool = False) -> str:
     """
     Strip noisy tags, then prefer article/main/body so output matches
@@ -467,6 +525,8 @@ class HTMLToMarkdown(HTMLParser):
         md = "".join(self.md)
         md = re.sub(r"\n{3,}", "\n\n", md)
         md = _collapse_blank_lines_between_pipe_tables(md)
+        md = _strip_empty_markdown_list_lines(md)
+        md = _collapse_excess_blank_lines(md)
         return md.strip()
 
 
@@ -582,7 +642,7 @@ Examples:
         help="Use full <body> instead of article/main extraction (more noise, wider coverage)",
     )
     parser.add_argument("--timeout", type=int, default=30, help="Request timeout in seconds")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.1.1")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.1.3")
 
     args = parser.parse_args()
 

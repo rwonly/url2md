@@ -2,7 +2,7 @@
 
 Convert web pages to clean, readable **Markdown** using a small Python script. Handy for documentation, archiving articles, batch exports, or any workflow where you want HTML turned into `.md` without pulling in third-party packages.
 
-This repository also includes a **Cursor skill** ([`SKILL.md`](SKILL.md)) so agents can discover when to use url2md—for example when a single fetch is not enough and a script-based or bulk conversion fits better.
+This repository also includes a **skill** (`[SKILL.md](SKILL.md)`) so agents can discover when to use url2md—for example when a single fetch is not enough and a script-based or bulk conversion fits better.
 
 ## Requirements
 
@@ -39,16 +39,18 @@ python3 scripts/url2md.py -f urls.txt -d ./markdown_files/
 
 ## CLI reference
 
-| Option | Description |
-|--------|-------------|
-| `url` | Single URL to convert |
-| `-o`, `--output` | Output file (default: stdout) |
-| `-f`, `--file` | File containing URLs (one per line) |
-| `-d`, `--dir` | Output directory for batch mode |
-| `--no-title` | Do not add the page title as H1 |
-| `--full-page` | Use full `<body>` instead of preferring `<article>` / `<main>` |
-| `--timeout` | Request timeout in seconds (default: 30) |
-| `-v`, `--version` | Show version |
+
+| Option            | Description                                                    |
+| ----------------- | -------------------------------------------------------------- |
+| `url`             | Single URL to convert                                          |
+| `-o`, `--output`  | Output file (default: stdout)                                  |
+| `-f`, `--file`    | File containing URLs (one per line)                            |
+| `-d`, `--dir`     | Output directory for batch mode                                |
+| `--no-title`      | Do not add the page title as H1                                |
+| `--full-page`     | Use full `<body>` instead of preferring `<article>` / `<main>` |
+| `--timeout`       | Request timeout in seconds (default: 30)                       |
+| `-v`, `--version` | Show version                                                   |
+
 
 **More examples:**
 
