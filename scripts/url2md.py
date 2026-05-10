@@ -13,6 +13,8 @@ Supports:
 
 from __future__ import annotations
 
+__version__ = "1.4.0"
+
 import sys
 import os
 import argparse
@@ -1150,7 +1152,7 @@ Examples:
         help="Use full <body> instead of article/main extraction (more noise, wider coverage)",
     )
     parser.add_argument("--timeout", type=int, default=30, help="Request timeout in seconds")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.3.0")
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--frontmatter",
         action="store_true",
